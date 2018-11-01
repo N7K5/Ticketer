@@ -1,0 +1,29 @@
+{
+  "name": "tickerer",
+  "version": "1.0.0",
+  "description": "An online ticket booking project for E.Com",
+  "main": "server.js",
+  "scripts": {
+    "test": "node server.js test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/N7K5/Ticketer.git"
+  },
+  "keywords": [
+    "Ticket",
+    "book",
+    "Ticket",
+    "BookMyTicket"
+  ],
+  "author": "N7K5",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/N7K5/Ticketer/issues"
+  },
+  "homepage": "https://github.com/N7K5/Ticketer#readme",
+  "dependencies": {
+    "express": "^4.9.0",
+    "mongodb": "^3.1.1"
+  }
+}
