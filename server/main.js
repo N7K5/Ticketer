@@ -4,6 +4,7 @@ const DB= "ticketer";
 const express= require("express");
 const mongo= require(__dirname+"/mongo");
 const utils= require(__dirname+"/utils");
+const env_vars= require(__dirname+"/env_vars");
 
 
 const PORT= process.env.PORT || 3000;
@@ -143,16 +144,34 @@ app.post("/seller/register", (req, res) => {
 
 
 
-app.post("/seller/login", (req, res) => {
+app.post("/login/:type", (req, res) => {
     let mail= req.param("mail");
     let pass= req.param("pass");
+    let loginType= req.params.type;
+    let tokenCollection= null;
+    let userCollection= null;
+
+    if(loginType.toLowerCase().trim() == "seller") {
+        tokenCollection= env_vars.seller_login_tokens;
+        userCollection= env_vars.seller;
+    } else if(loginType.toLowerCase().trim() == "user") {
+        tokenCollection= env_vars.user_login_tokens;
+        userCollection= env_vars.user;
+    } else {
+        res.statusCode= 400;
+        res.send({
+            code: -2,
+            status: "Bad Request",
+            details: "Error in requested URL...",
+        });
+    }
 
     if(mail) {
         mail= mail.toLowerCase().trim();
     }
 
     if(mail && pass) {
-        mongo.find("seller", {
+        mongo.find(userCollection, {
             mail,
             pass: utils.hashPass(mail, pass),
         }).then((data) => {
@@ -160,11 +179,11 @@ app.post("/seller/login", (req, res) => {
                 let orig_id= data[0]._id.toString();
                 let token= utils.makeRandom(12);
 
-                mongo.find("login_tokens", {
+                mongo.find(tokenCollection, {
                     orig_id,
                 }).then(login_data => {
                     if(login_data.length != 0) { // already token given, so update
-                        mongo.updateAll("login_tokens", {
+                        mongo.updateAll(tokenCollection, {
                             orig_id,
                         }, {
                             $set:{
@@ -185,7 +204,7 @@ app.post("/seller/login", (req, res) => {
                             })
                         });
                     } else { // give him new token
-                        mongo.insert("login_tokens", {
+                        mongo.insert(tokenCollection, {
                             orig_id,
                             token,
                         }).then(data => {
