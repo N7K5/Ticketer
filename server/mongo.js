@@ -1,201 +1,272 @@
 // mongodb://<dbuser>:<dbpassword>@ds249233.mlab.com:49233/ticketer
 
 const {MongoClient, ObjectID}= require("mongodb");
+let URL= null;
+let DB= null;
 
-const URL= "mongodb://johnchakder:h67te5gcelt@ds249233.mlab.com:49233/ticketer";
-const DB= "ticketer";
+let init= (url, db) =>{
+    return new Promise((resolve, reject) => {
+        if(!url || !db) {
+            return reject("Invalid Parameter...");
+        }
+
+        URL= url;
+        MongoClient.connect( URL ,{useNewUrlParser: true}, (err, client) => {
+            if(err) {
+                reject({
+                    code: -1,
+                    cause: `Database Error`,
+                    details: `mongo : Unable to connect to mongodb " ${DB} " `,
+                });
+                return;
+            };
+            DB= client.db(db);
+            process.on("exit", function() {
+                client.close();
+                console.log("\n\tDatabase Connection closed\n")
+            });
+            resolve("Database Connected...");
+        });
+    });
+};
+
 
 let insert= (collection, data)=>{
     return new Promise((resolve, reject) => {
-        MongoClient.connect( URL ,{useNewUrlParser: true}, (err, client) => {
-            if(err) {
-                reject(`\n\n\tError while Connecting to Mongodb\n\n`);
+            if(!DB) {
+                reject({
+                    code: -1,
+                    cause: `Database Error`,
+                    details: `mongo : Unable to connect to mongodb " ${DB} " `,
+                });
                 return;
-            };
-            const db= client.db(DB);
-            db.collection(collection).insert(data , (err, res) => {
+            }
+            DB.collection(collection).insert(data , (err, res) => {
                 if(err) {
-                    reject(`\n\n\tUnable To Insert to ${collection}..\n\n`);
+                    reject({
+                        code: -2,
+                        cause: `Internal Error`,
+                        details: `mongo : Unable to insert to ${collection}`,
+                    });
+                    //client.close();
                     return;
                 }
                 //console.log(JSON.stringify(res, undefined, 2));
                 if(res.result.ok) {
                     resolve(res);
                 }else {
-                    reject(res);
+                    reject({
+                        code: -3,
+                        cause: `Internal Error`,
+                        details: `mongo : Unable to insert to ${collection}, res.result is not ok`,
+                    });
                 }
             });
-            client.close();
+            //client.close();
         });
-    });
 };
 
 
 let insertIfNotExist= (collection, query_json, data) => {
 	return new Promise((resolve, reject) => {
-		
-        MongoClient.connect( URL ,{useNewUrlParser: true}, (err, client) => {
-            if(err) {
-                reject(`\n\n\tError while Connecting to Mongodb\n\n`);
-                return;
-            };
-            const db= client.db(DB);
+        if(!DB) {
+            reject({
+                code: -1,
+                cause: `Database Error`,
+                details: `mongo : Unable to connect to mongodb " ${DB} " `,
+            });
+            return;
+        }
 
-            db.collection(collection).find(
+        DB.collection(collection).find(
                 query_json
             ).toArray()
-            .then(data => {
-                if(data.length == 0) {
-                    db.collection(collection).insert(data, (err, res) => {
+            .then(resu => {
+                if(resu.length == 0) {
+                    DB.collection(collection).insert(data, (err, res) => {
                         if(err) {
-                            reject("\n\n Unable to insert \n\n");
-                            client.close();
+                            reject({
+                                code: -3,
+                                cause: `Internal Error`,
+                                details: `mongo : Unable to Insert to mongodb.. `,
+                            });
+                            //client.close();
                             return;
                         } else {
                             if(res.result.ok) {
                                 resolve(res);
-                                client.close();
+                                //client.close();
                                 return;
                             }
                             else {
-                                reject(res);
-                                client.close();
+                                reject({
+                                    code: -4,
+                                    cause: `Database Error`,
+                                    details: `mongo : Unable to insert to ${collection}, res.result is not ok`,
+                                });
+                                //client.close();
                                 return;
                             }
                         }
-                    })
+                    });
                 } else {
-                    reject("\n\n Already exists \n\n");
-                    client.close();
+                    reject({
+                        code: -2,
+                        cause: `Query Error`,
+                        details: `mongo :  The query already exists `,
+                    });
+                    //client.close();
+                    return;
                 }
             }).catch( err => {
-                reject(err);
-                client.close();
+                reject({
+                    code: -3,
+                    cause: `Internal Error`,
+                    details: `mongo : Unable to Insert to mongodb.. `,
+                });
+                //client.close();
                 return;
             });
         });
-	});
 };
 
 
 let find= (collection, query_json) => {
     return new Promise((resolve, reject) => {
-        MongoClient.connect( URL ,{useNewUrlParser: true}, (err, client) => {
-            if(err) {
-                reject(`\n\n\tUnable To Connect..\n\n`);
-                return;
-            };
-            const db= client.db(DB);
+        if(!DB) {
+            reject({
+                code: -1,
+                cause: `Database Error`,
+                details: `mongo : Unable to connect to mongodb " ${DB} " `,
+            });
+            return;
+        }
 
-            db.collection(collection).find(
+            DB.collection(collection).find(
                 query_json
             ).toArray()
             .then(data => {
                 resolve(data);
-            }).catch(e => reject(e));
-            client.close();
+            }).catch(e => reject({
+                code: -2,
+                cause: `Internal Error`,
+                details: `mongo : Unable to Find... " `,
+            }));
+            //client.close();
         })
-    });
 };
 
 let updateOne= (collection, query, update) => {
     return new Promise((resolve, reject) => {
-        MongoClient.connect( URL ,{useNewUrlParser: true}, (err, client) => {
-            if(err) {
-                reject(`\n\n\tUnable To Connect..\n\n`);
-                return;
-            };
-            const db= client.db(DB);
-        
-            db.collection(collection).findOneAndUpdate(query, update, {
+        if(!DB) {
+            reject({
+                code: -1,
+                cause: `Database Error`,
+                details: `mongo : Unable to connect to mongodb " ${DB} " `,
+            });
+            return;
+        }
+            DB.collection(collection).findOneAndUpdate(query, update, {
                 returnOriginal: false,
             }).then((res) =>{
                 resolve(res);
-                client.close();
+                //client.close();
                 return;
             }).catch(err => {
-                reject(err);
-                client.close();
+                reject({
+                    code: -2,
+                    cause: `Internal Error`,
+                    details: `mongo : Could not find in the query" `,
+                });
+                //client.close();
                 return;
             });
         });
-    });
 };
 
 let updateAll= (collection, query, update) => {
     return new Promise((resolve, reject) => {
-        MongoClient.connect( URL ,{useNewUrlParser: true}, (err, client) => {
-            if(err) {
-                reject(`\n\n\tUnable To Connect..\n\n`);
-                return;
-            };
-            const db= client.db(DB);
-        
-            db.collection(collection).updateMany(query, update, {
+        if(!DB) {
+            reject({
+                code: -1,
+                cause: `Database Error`,
+                details: `mongo : Unable to connect to mongodb " ${DB} " `,
+            });
+            return;
+        }
+            
+            DB.collection(collection).updateMany(query, update, {
                 returnOriginal: false,
             }).then((res) =>{
                 resolve(res.result.nModified);
-                client.close();
+                //client.close();
                 return;
             }).catch(err => {
-                reject(err);
-                client.close();
+                reject({
+                    code: -2,
+                    cause: `Internal Error`,
+                    details: `mongo : Could not find in the query" `,
+                });
+                //client.close();
                 return;
             });
         });
-    });
 };
 
 let deleteOne= (collection, query) => {
     return new Promise((resolve, reject) => {
-        MongoClient.connect( URL ,{useNewUrlParser: true}, (err, client) => {
-            if(err) {
-                reject(`\n\n\tUnable To Connect..\n\n`);
-                return;
-            };
-            const db= client.db(DB);
+        
 
-            db.collection(collection).findOneAndDelete( 
+            DB.collection(collection).findOneAndDelete( 
                 query
             ).then(res=> {
                 resolve(res);
-                client.close();
+                //client.close();
                 return;
             }).catch(err => {
-                reject(err);
-                client.close();
+                reject({
+                    code: -2,
+                    cause: `Internal Error`,
+                    details: `mongo : Could not delete as the query" `,
+                });
+                //client.close();
                 return;
             });
         })
-    })
 };
 
 let deleteAll= (collection, query) => {
     return new Promise((resolve, reject) => {
-        MongoClient.connect( URL ,{useNewUrlParser: true}, (err, client) => {
-            if(err) {
-                reject(`\n\n\tUnable To Connect..\n\n`);
-                return;
-            };
-            const db= client.db(DB);
+        if(!DB) {
+            reject({
+                code: -1,
+                cause: `Database Error`,
+                details: `mongo : Unable to connect to mongodb " ${DB} " `,
+            });
+            return;
+        }
 
-            db.collection(collection).deleteMany( 
+            DB.collection(collection).deleteMany( 
                 query
             ).then(res=> {
                 resolve(res.result.n);
-                client.close();
+                //client.close();
                 return;
             }).catch(err => {
-                reject(err);
-                client.close();
+                reject({
+                    code: -2,
+                    cause: `Internal Error`,
+                    details: `mongo : Could not delete as the query" `,
+                });
+                //client.close();
                 return;
             });
         })
-    })
 };
 
 
 module.exports= {
+    init,
     insert,
     insertIfNotExist,
     find,

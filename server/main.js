@@ -1,3 +1,5 @@
+const URL= "mongodb://johnchakder:h67te5gcelt@ds249233.mlab.com:49233/ticketer";
+const DB= "ticketer";
 
 const express= require("express");
 const mongo= require(__dirname+"/mongo");
@@ -20,10 +22,10 @@ app.use((req, res, next) => {
 //     asd: "asd"
 // })
 // .then((res)=> {
-//     console.log(res);
+//     console.log("res\n\n", res);
 // })
 // .catch((err) => {
-//     console.log(err);
+//     console.log("err\n\n", err);
 // });
 
 
@@ -70,9 +72,12 @@ app.use((req, res, next) => {
 // .catch(e => console.log(e)); 
 
 
-mongo.insertIfNotExist("asd", {
-    asd: /.*/
-}).then(data => console.log(data));
+// mongo.insertIfNotExist("asd", {
+//     asd: "as"
+// }, {
+//     pico: "asas",
+//     asd: "as"
+// }).then(data => console.log(data));
 
 
 
@@ -82,18 +87,15 @@ app.post("/seller/register", (req, res) => {
     let name= req.param("name");
 
     /* Cheak if mail is valid */
-    let mailExp= /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    let mailIsValid = false;
+    let mailIsValid = utils.isValidMail(mail);
     if(mail) {
         mail= mail.toLowerCase().trim();
-        mailIsValid= mailExp.test(String(mail))?true:false;
-        
     };
 
     /* cheak if pass exists than hash pass */
     let hashedPass= null;
     if(pass.length>7 && mailIsValid) {
-        hashedPass= utils.MD5(mail+pass);
+        hashedPass= utils.hashPass(mail, pass);
     };
 
     /* send response */
@@ -128,8 +130,7 @@ app.post("/seller/register", (req, res) => {
                 details: "Something happend while connection to DataBase...",
             });
         })
-    }
-    else {
+    } else {
         res.statusCode= 400;
         res.send({
             code: -2,
@@ -142,9 +143,110 @@ app.post("/seller/register", (req, res) => {
 
 
 
-app.listen(PORT, () => {
-    console.log(`\n\n\tListening on PORT ${PORT}\n\n`);
+app.post("/seller/login", (req, res) => {
+    let mail= req.param("mail");
+    let pass= req.param("pass");
+
+    if(mail) {
+        mail= mail.toLowerCase().trim();
+    }
+
+    if(mail && pass) {
+        mongo.find("seller", {
+            mail,
+            pass: utils.hashPass(mail, pass),
+        }).then((data) => {
+            if(data.length>0) { // registered user..
+                let orig_id= data[0]._id.toString();
+                let token= utils.makeRandom(12);
+
+                mongo.find("login_tokens", {
+                    orig_id,
+                }).then(login_data => {
+                    if(login_data.length != 0) { // already token given, so update
+                        mongo.updateAll("login_tokens", {
+                            orig_id,
+                        }, {
+                            $set:{
+                                token
+                            }
+                        }).then(data => {
+                            res.send({
+                                code: 1,
+                                status: "success",
+                                details: "Updated to New Token",
+                                token,
+                            });
+                        }).catch(e => {
+                            res.send({
+                                code:-2,
+                                status: "Internal Error",
+                                details: "error while updating previous token...",
+                            })
+                        });
+                    } else { // give him new token
+                        mongo.insert("login_tokens", {
+                            orig_id,
+                            token,
+                        }).then(data => {
+                            res.send({
+                                code: 1,
+                                status: "success",
+                                details: "New Token Generated",
+                                token,
+                            });
+                        }).catch(e => {
+                            res.send({
+                                code:-2,
+                                status: "Internal Error",
+                                details: "error while storing new token...",
+                            })
+                        });
+                    }
+                }).catch(e => {
+                    res.statusCode= 500;
+                    res.send({
+                        code: -2,
+                        status: "Internal Error",
+                        details: "error while searching for pervious tokens...",
+                    })
+                })
+            } else { // Not a registered user..
+                res.statusCode= 400;
+                res.send({
+                    code: -1,
+                    status: "Bad Request",
+                    details: "Couldnot Varify Email..",
+                });
+            }
+        }).catch(e => {
+            res.send(e);
+        })
+    } else { // error in params
+        res.statusCode= 400;
+        res.send({
+            code: -2,
+            status: "Bad Request",
+            details: "Error in POST parameters...",
+        });
+    }
 });
+
+
+
+
+
+
+mongo.init(URL, DB)
+    .then((res) => {
+        console.log("\n\t",res);
+        app.listen(PORT, () => {
+            console.log(`\tListening on PORT ${PORT}\n\n`);
+        });
+    })
+    .catch(e => {
+        console.log(e);
+    })
 
 
 
