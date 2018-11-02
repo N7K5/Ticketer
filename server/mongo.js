@@ -31,6 +31,53 @@ let insert= (collection, data)=>{
 };
 
 
+let insertIfNotExist= (collection, query_json, data) => {
+	return new Promise((resolve, reject) => {
+		
+        MongoClient.connect( URL ,{useNewUrlParser: true}, (err, client) => {
+            if(err) {
+                reject(`\n\n\tError while Connecting to Mongodb\n\n`);
+                return;
+            };
+            const db= client.db(DB);
+
+            db.collection(collection).find(
+                query_json
+            ).toArray()
+            .then(data => {
+                if(data.length == 0) {
+                    db.collection(collection).insert(data, (err, res) => {
+                        if(err) {
+                            reject("\n\n Unable to insert \n\n");
+                            client.close();
+                            return;
+                        } else {
+                            if(res.result.ok) {
+                                resolve(res);
+                                client.close();
+                                return;
+                            }
+                            else {
+                                reject(res);
+                                client.close();
+                                return;
+                            }
+                        }
+                    })
+                } else {
+                    reject("\n\n Already exists \n\n");
+                    client.close();
+                }
+            }).catch( err => {
+                reject(err);
+                client.close();
+                return;
+            });
+        });
+	});
+};
+
+
 let find= (collection, query_json) => {
     return new Promise((resolve, reject) => {
         MongoClient.connect( URL ,{useNewUrlParser: true}, (err, client) => {
@@ -150,6 +197,7 @@ let deleteAll= (collection, query) => {
 
 module.exports= {
     insert,
+    insertIfNotExist,
     find,
     updateOne,
     updateAll,

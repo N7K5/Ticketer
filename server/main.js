@@ -70,6 +70,11 @@ app.use((req, res, next) => {
 // .catch(e => console.log(e)); 
 
 
+mongo.insertIfNotExist("asd", {
+    asd: /.*/
+}).then(data => console.log(data));
+
+
 
 app.post("/seller/register", (req, res) => {
     let mail= req.param("mail");
