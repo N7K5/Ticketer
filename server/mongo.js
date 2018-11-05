@@ -265,6 +265,46 @@ let deleteAll= (collection, query) => {
 };
 
 
+
+let cheakIfValidToken= (collection, token) => {
+    return new Promise((resolve, reject)=> {
+        if(!DB) {
+            reject({
+                code: -1,
+                cause: `Database Error`,
+                details: `mongo : Unable to connect to mongodb " ${DB} " `,
+            });
+            return;
+        }
+
+        find(collection, {
+            token
+        }).then(token_data => {
+            if(token_data.length<1) {
+                reject({
+                    code: -1,
+                    cause: `Token Error`,
+                    details: `Invalid login token... login again...`,
+                });
+                return;
+            } else {
+                resolve({
+                    _id: token_data[0].orig_id,
+                });
+                return;
+            }
+        }).catch( e => {
+            reject({
+                code: -2,
+                cause: `Search error`,
+                details: `could not started finding token...`,
+            });
+            return;
+        })
+    })
+}
+
+
 module.exports= {
     init,
     insert,
@@ -273,5 +313,6 @@ module.exports= {
     updateOne,
     updateAll,
     deleteOne,
-    deleteAll
+    deleteAll,
+    cheakIfValidToken
 }

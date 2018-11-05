@@ -1,7 +1,10 @@
+const base64= false;
+
 const URL= "mongodb://johnchakder:h67te5gcelt@ds249233.mlab.com:49233/ticketer";
 const DB= "ticketer";
 
 const express= require("express");
+const {ObjectID}= require("mongodb");
 const mongo= require(__dirname+"/mongo");
 const utils= require(__dirname+"/utils");
 const env_vars= require(__dirname+"/env_vars");
@@ -86,6 +89,11 @@ app.post("/seller/register", (req, res) => {
     let mail= req.param("mail");
     let pass= req.param("pass");
     let name= req.param("name");
+    if(base64) {
+        pass= atob(pass);
+        mail= atob(mail);
+        name= atob(name);
+    }
 
     /* Cheak if mail is valid */
     let mailIsValid = utils.isValidMail(mail);
@@ -101,11 +109,11 @@ app.post("/seller/register", (req, res) => {
 
     /* send response */
     if(hashedPass && name && name.length>2) {
-        mongo.find("seller", {
+        mongo.find(env_vars.seller_data, {
             mail
         }).then(resArr => {
             if(resArr.length == 0) {
-                mongo.insert("seller", {
+                mongo.insert(env_vars.seller_data, {
                     mail,
                     pass: hashedPass,
                     name,
@@ -147,16 +155,21 @@ app.post("/seller/register", (req, res) => {
 app.post("/login/:type", (req, res) => {
     let mail= req.param("mail");
     let pass= req.param("pass");
+    if(base64) {
+        pass= atob(pass);
+        mail= atob(mail);
+    }
+
     let loginType= req.params.type;
     let tokenCollection= null;
     let userCollection= null;
 
     if(loginType.toLowerCase().trim() == "seller") {
         tokenCollection= env_vars.seller_login_tokens;
-        userCollection= env_vars.seller;
+        userCollection= env_vars.seller_data;
     } else if(loginType.toLowerCase().trim() == "user") {
         tokenCollection= env_vars.user_login_tokens;
-        userCollection= env_vars.user;
+        userCollection= env_vars.user_data;
     } else {
         res.statusCode= 400;
         res.send({
@@ -177,7 +190,7 @@ app.post("/login/:type", (req, res) => {
         }).then((data) => {
             if(data.length>0) { // registered user..
                 let orig_id= data[0]._id.toString();
-                let token= utils.makeRandom(12);
+                let token= utils.makeRandomString(env_vars.token_length);
 
                 mongo.find(tokenCollection, {
                     orig_id,
@@ -235,7 +248,7 @@ app.post("/login/:type", (req, res) => {
                 res.send({
                     code: -1,
                     status: "Bad Request",
-                    details: "Couldnot Varify Email..",
+                    details: "Couldnot Varify Email or Password..",
                 });
             }
         }).catch(e => {
@@ -249,6 +262,70 @@ app.post("/login/:type", (req, res) => {
             details: "Error in POST parameters...",
         });
     }
+});
+
+
+
+
+app.post("/seller/addticket", (req, res) => {
+    let token= req.param("token");
+    let event_name= req.param("event");
+    let details= req.param("details") || " ";
+    let no_of_ticket= req.param("no_of_ticket");
+    let expires= req.param("expires");
+
+    let timeStamp = Math.round((new Date()).getTime());
+
+
+
+    if(token.length!= env_vars.token_length || event_name.length<2 || no_of_ticket<0 || expires<timeStamp) {
+        res.statusCode= 400;
+        if(expires<timeStamp) {
+            console.log(`timeastamp problem.. current ${timeStamp} expires ${expires}`);
+        }
+        res.send({
+            code: -2,
+            status: "Bad Request",
+            details: "Error in POST parameters...",
+        });
+        return;
+    }
+
+
+
+    mongo.cheakIfValidToken(env_vars.seller_login_tokens, token)
+    .then(valid_user => {
+        return mongo.find(env_vars.seller_data, {
+            _id: ObjectID(valid_user._id),
+        })
+    })
+    .then(user_data => {
+        return mongo.insert(env_vars.seller_ticket_details, {
+            event_name,
+            created_by: user_data[0].name,
+            details,
+            no_of_ticket,
+            avail_tickets: no_of_ticket,
+            creator_id: user_data[0]._id.toString(),
+            expires,
+        })
+    })
+    .then(inserted => {
+        res.send({
+            code: 1,
+            status: "Success",
+            details: `${no_of_ticket} Tickets were added...`,
+        })
+    })
+    .catch(e => {
+        res.send({
+            code: -1,
+            status: "Invalid Token",
+            details: "Session has Expired.. Login again..",
+            error: e,
+        });
+    });
+
 });
 
 
