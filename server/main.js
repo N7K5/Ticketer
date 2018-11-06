@@ -85,7 +85,7 @@ app.use((req, res, next) => {
 
 
 
-app.post("/seller/register", (req, res) => {
+app.post("/register/:type", (req, res) => {
     let mail= req.param("mail");
     let pass= req.param("pass");
     let name= req.param("name");
@@ -94,6 +94,21 @@ app.post("/seller/register", (req, res) => {
         mail= atob(mail);
         name= atob(name);
     }
+
+    let loginType= req.params.type;
+    if(loginType.toLowerCase().trim() == "seller") {
+        userCollection= env_vars.seller_data;
+    } else if(loginType.toLowerCase().trim() == "user") {
+        userCollection= env_vars.user_data;
+    } else {
+        res.statusCode= 400;
+        res.send({
+            code: -2,
+            status: "Bad Request",
+            details: "Error in requested URL...",
+        });
+    }
+
 
     /* Cheak if mail is valid */
     let mailIsValid = utils.isValidMail(mail);
@@ -109,11 +124,11 @@ app.post("/seller/register", (req, res) => {
 
     /* send response */
     if(hashedPass && name && name.length>2) {
-        mongo.find(env_vars.seller_data, {
+        mongo.find(userCollection, {
             mail
         }).then(resArr => {
             if(resArr.length == 0) {
-                mongo.insert(env_vars.seller_data, {
+                mongo.insert(userCollection, {
                     mail,
                     pass: hashedPass,
                     name,
@@ -269,10 +284,10 @@ app.post("/login/:type", (req, res) => {
 
 app.post("/seller/addticket", (req, res) => {
     let token= req.param("token");
-    let event_name= req.param("event");
+    let event_name= req.param("event").toLocaleLowerCase().trim();
     let details= req.param("details") || " ";
-    let no_of_ticket= req.param("no_of_ticket");
-    let expires= req.param("expires");
+    let no_of_ticket= parseInt(req.param("no_of_ticket"));
+    let expires= parseInt(req.param("expires"));
 
     let timeStamp = Math.round((new Date()).getTime());
 
@@ -291,8 +306,6 @@ app.post("/seller/addticket", (req, res) => {
         return;
     }
 
-
-
     mongo.cheakIfValidToken(env_vars.seller_login_tokens, token)
     .then(valid_user => {
         return mongo.find(env_vars.seller_data, {
@@ -302,7 +315,7 @@ app.post("/seller/addticket", (req, res) => {
     .then(user_data => {
         return mongo.insert(env_vars.seller_ticket_details, {
             event_name,
-            created_by: user_data[0].name,
+            created_by: user_data[0].name.toLowerCase().trim(),
             details,
             no_of_ticket,
             avail_tickets: no_of_ticket,
@@ -327,6 +340,55 @@ app.post("/seller/addticket", (req, res) => {
     });
 
 });
+
+
+
+app.post("/getavailticket", (req, res) => {
+    let expires= parseInt(req.param("expires"));
+    let created_by= req.param("created_by");
+    let event_name= req.param("event_name");
+
+    let search_query= {};
+    if(expires) {
+        search_query.expires= expires;
+    }
+    if(created_by) {
+        search_query.created_by= created_by.toLowerCase().trim();
+    }
+    if(event_name) {
+        search_query.event_name= event_name.toLocaleLowerCase().trim();
+    }
+
+    mongo.find(env_vars.seller_ticket_details, search_query)
+    .then(ticket_array => {
+        let res_arr= [];
+        for(item of ticket_array) {
+            res_arr.push({
+                event_name: item.event_name,
+                created_by: item.created_by,
+                details: item.details,
+                no_of_ticket: item.no_of_ticket,
+                avail_tickets: item.avail_tickets,
+                expires: item.expires,
+            });
+        }
+        res.send({
+            code: 1,
+            status: "Success",
+            details: `${ticket_array.length} events were found...`,
+            events: res_arr,
+        });
+        return ;
+    }).catch(e => {
+        res.send({
+            code: -2,
+            status: "DB Error",
+            details: "Unable to search for tickets...",
+        });
+        return;
+    })
+});
+
 
 
 
