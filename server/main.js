@@ -356,7 +356,7 @@ app.post("/getavailticket", (req, res) => {
         search_query.created_by= created_by.toLowerCase().trim();
     }
     if(event_name) {
-        search_query.event_name= event_name.toLocaleLowerCase().trim();
+        search_query.event_name= event_name.toLowerCase().trim();
     }
 
     mongo.find(env_vars.seller_ticket_details, search_query)
