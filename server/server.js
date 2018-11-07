@@ -132,6 +132,7 @@ app.post("/register/:type", (req, res) => {
                     mail,
                     pass: hashedPass,
                     name,
+                    balance: 0,
                 }).then( ()=> {
                     res.send({
                         code: 1,
@@ -284,16 +285,17 @@ app.post("/login/:type", (req, res) => {
 
 app.post("/seller/addticket", (req, res) => {
     let token= req.param("token");
-    let event_name= req.param("event").toLocaleLowerCase().trim();
+    let event_name= req.param("event").toLowerCase().trim();
     let details= req.param("details") || " ";
     let no_of_ticket= parseInt(req.param("no_of_ticket"));
     let expires= parseInt(req.param("expires"));
+    let cost= parseInt(req.param("cost"));
 
     let timeStamp = Math.round((new Date()).getTime());
 
 
 
-    if(token.length!= env_vars.token_length || event_name.length<2 || no_of_ticket<0 || expires<timeStamp) {
+    if(token.length!= env_vars.token_length || event_name.length<2 || no_of_ticket<0 || expires<timeStamp || isNaN(cost)) {
         res.statusCode= 400;
         if(expires<timeStamp) {
             console.log(`timeastamp problem.. current ${timeStamp} expires ${expires}`);
@@ -321,6 +323,7 @@ app.post("/seller/addticket", (req, res) => {
             avail_tickets: no_of_ticket,
             creator_id: user_data[0]._id.toString(),
             expires,
+            cost
         })
     })
     .then(inserted => {
@@ -335,7 +338,7 @@ app.post("/seller/addticket", (req, res) => {
             code: -1,
             status: "Invalid Token",
             details: "Session has Expired.. Login again..",
-            error: e,
+            //error: e,
         });
     });
 
@@ -364,12 +367,14 @@ app.post("/getavailticket", (req, res) => {
         let res_arr= [];
         for(item of ticket_array) {
             res_arr.push({
+                id: item._id.toString(),
                 event_name: item.event_name,
                 created_by: item.created_by,
                 details: item.details,
                 no_of_ticket: item.no_of_ticket,
                 avail_tickets: item.avail_tickets,
                 expires: item.expires,
+                cost: item.cost,
             });
         }
         res.send({
@@ -391,20 +396,279 @@ app.post("/getavailticket", (req, res) => {
 
 
 
+app.post("/user/buyticket", (req, res) => {
+    let token= req.param("token");
+    let ticketId= req.param("id");
+    let total_buys= parseInt(req.param("no"));
+
+    if(!total_buys || isNaN(total_buys) || total_buys<1) {
+        total_buys= 1;
+    }
+
+    if(!token || !ticketId || !total_buys) {
+        res.statusCode= 400;
+        res.send({
+            code: -2,
+            status: "Bad Request",
+            details: "Error in POST parameters...",
+        });
+        return;
+    }
+
+    mongo.cheakIfValidToken(env_vars.user_login_tokens, token)
+    .then(valid_user => {
+        return mongo.find(env_vars.user_data, {
+            _id: ObjectID(valid_user._id),
+        })
+    })
+    .then(user_data => {
+            mongo.find(env_vars.seller_ticket_details, {
+                _id: ObjectID(ticketId),
+            })
+            .then(ticket_arr => {
+                if(ticket_arr.length<1 || user_data.length<1) {
+                    return res.send({
+                        code: -2,
+                        status: "Invalid request",
+                        details: "Tickets not found... Try Again",
+                    });
+                }
+                // let all_data= {
+                //     user_data,
+                //     ticket_arr
+                // }
+                // res.send(all_data);
+                // return ;
+                let total_cost= total_buys* parseInt(ticket_arr[0].cost);
+                if(user_data[0].balance> total_cost) {
+                    // * reduce balance and add to baught ticket *
+ 
+                    baught_tickets= [];
+                    if(user_data[0].baught_tickets) {
+                        baught_tickets= user_data[0].baught_tickets;
+                    }
+                    baught_tickets.push({
+                        transaction_id: utils.makeRandomString(12),
+                        ticket: ticket_arr[0],
+                        no_of_ticket: total_buys,
+                        time: Math.round((new Date()).getTime()),
+                    })
+                    mongo.updateOne(env_vars.user_data, {
+                        _id: ObjectID(user_data[0]._id),
+                    }, {
+                        $set: {
+                            baught_tickets
+                        },
+                        $inc: {
+                            balance: -(total_cost),
+                        }
+                    })
+                    // * increase seller's balance *
+                    .then(nUpdated => {
+                        return mongo.updateOne(env_vars.seller_data, {
+                            _id: ObjectID(ticket_arr[0].creator_id)
+                        }, {
+                            $inc: {
+                                balance: total_cost,
+                            },
+                        })
+                    })
+                    // * Decrease no of available tickets *
+                    .then(nUpdated => {
+                        return mongo.updateOne(env_vars.seller_ticket_details, {
+                            _id: ticket_arr[0]._id,
+                        }, {
+                            $inc: {
+                                avail_tickets: -(total_buys),
+                            }
+                        })
+                    })
+                    .then(nUpdated => {
+                        res.send({
+                            code: 1,
+                            status: "Success",
+                            details: `Purchesed ${total_buys} Ticket(s)`,
+                        })
+                        return ;
+                    })
+                    .catch(e => {
+                        res.send({
+                            code: -2,
+                            status: "Internal Error",
+                            details: "Error while execution chained queries.. This is BAD...",
+                        })
+                    })
+                    
+                } else {
+                    res.send({
+                        code: -2,
+                        status: "Unable to buy",
+                        details: "Does Not have enough balance... reacharge your account",
+                    });
+                    return ;
+                }
+            })
+            .catch(e => {
+                res.send({
+                    code: -2,
+                    status: "Invalid request",
+                    details: "Invalid Ticket ID... Try Again",
+                });
+            })
+    })
+    .catch(e => {
+        res.send({
+            code: -1,
+            status: "Invalid Token",
+            details: "Session has Expired.. Login again..",
+            //error: e,
+        });
+    })
+});
+
+
+app.post("/addbalance/:type", (req, res) => {
+    let loginType= req.params.type.trim().toLowerCase();
+    let token= req.param("token");
+    let balance= parseInt(req.param("bal"));
+    let token_collection, data_collection;
+
+    if(loginType== "seller") {
+        token_collection= env_vars.seller_login_tokens;
+        data_collection= env_vars.seller_data;
+    } else if(loginType == "user") {
+        token_collection= env_vars.user_login_tokens;
+        data_collection= env_vars.user_data;
+    } else {
+        res.statusCode= 400;
+        res.send ({
+            code: -2,
+            status: "Bad Request",
+            details: "Error in POST parameters...",
+        })
+        return;
+    }
+    if(balance<1) {
+        res.send ({
+            code: -3,
+            status: "Bad Request",
+            details: "Invalid Balance...",
+        });
+        return;
+    }
+
+    mongo.cheakIfValidToken(token_collection, token)
+    .then(valid_user => {
+        return mongo.updateOne(data_collection, {
+            _id: ObjectID(valid_user._id),
+        }, {
+            $inc: {
+                balance,
+            }
+        })
+    })
+    .then(done => {
+        res.send({
+            code: 1,
+            status: "Success",
+            details: `Recharge of ${balance} Successfull..`,
+        });
+        return ;
+    })
+    .catch( e => {
+        res.send({
+            code: -1,
+            status: "Invalid Token",
+            details: "Session has Expired.. Login again..",
+            //error: e,
+        });
+    });
+
+});
+
+
+app.post("/profile/:type", (req, res) => {
+    token= req.param("token");
+    let token_collection, data_collection;
+
+    let loginType= req.params.type.trim().toLowerCase();
+
+    if(loginType== "seller") {
+        token_collection= env_vars.seller_login_tokens;
+        data_collection= env_vars.seller_data;
+    } else if(loginType == "user") {
+        token_collection= env_vars.user_login_tokens;
+        data_collection= env_vars.user_data;
+    } else {
+        res.statusCode= 400;
+        res.send ({
+            code: -2,
+            status: "Bad Request",
+            details: "Error in POST parameters...",
+        })
+        return;
+    }
+
+    mongo.cheakIfValidToken(token_collection, token)
+    .then(valid_user => {
+        return mongo.find(data_collection, {
+            _id: ObjectID(valid_user._id)
+        })
+    })
+    .then(user_arr => {
+        if(loginType== "seller") {
+            res.send({
+                code: 1,
+                status: "Success",
+                details: "fetched Data Successfully",
+                data: {
+                    name:user_arr[0].name,
+                    mail: user_arr[0].mail,
+                    balance: user_arr[0].balance,
+                }
+            })
+            return;
+        }
+        else {
+            res.send({
+                code: 1,
+                status: "Success",
+                details: "fetched Data Successfully",
+                data: {
+                    name:user_arr[0].name,
+                    mail: user_arr[0].mail,
+                    balance: user_arr[0].balance,
+                    baught_tickets: user_arr[0].baught_tickets,
+                }
+            })
+            return;
+        }
+    })
+    .catch(e => {
+        res.send({
+            code: -1,
+            status: "Invalid Token",
+            details: "Session has Expired.. Login again..",
+            //error: e,
+        });
+    })
+});
+
+
 
 
 
 
 mongo.init(URL, DB)
-    .then((res) => {
-        console.log("\n\t",res);
-        app.listen(PORT, () => {
-            console.log(`\tListening on PORT ${PORT}\n\n`);
-        });
-    })
-    .catch(e => {
-        console.log(e);
-    })
+.then((res) => {
+    console.log("\n\t",res);
+    app.listen(PORT, () => {
+        console.log(`\tListening on PORT ${PORT}\n\n`);
+    });
+})
+.catch(e => {
+    console.log(e);
+})
 
 
 
