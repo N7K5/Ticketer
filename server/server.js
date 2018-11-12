@@ -5,6 +5,7 @@ const DB= "ticketer";
 
 const express= require("express");
 const {ObjectID}= require("mongodb");
+const path= require("path");
 const mongo= require(__dirname+"/mongo");
 const utils= require(__dirname+"/utils");
 const env_vars= require(__dirname+"/env_vars");
@@ -13,6 +14,27 @@ const env_vars= require(__dirname+"/env_vars");
 const PORT= process.env.PORT || 3000;
 
 let app= express();
+
+app.use(express.static(__dirname + "/../public"));
+
+app.use(function (req, res, next) {
+
+    // Website you wish to allow to connect
+    res.setHeader('Access-Control-Allow-Origin', '*');
+
+    // Request methods you wish to allow
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE');
+
+    // Request headers you wish to allow
+    res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With,content-type');
+
+    // Set to true if you need the website to include cookies in the requests sent
+    // to the API (e.g. in case you use sessions)
+    res.setHeader('Access-Control-Allow-Credentials', true);
+
+    // Pass to next layer of middleware
+    next();
+});
 
 app.use((req, res, next) => {
 
@@ -175,6 +197,8 @@ app.post("/login/:type", (req, res) => {
         pass= atob(pass);
         mail= atob(mail);
     }
+
+    console.log(mail, pass);
 
     let loginType= req.params.type;
     let tokenCollection= null;
@@ -654,6 +678,11 @@ app.post("/profile/:type", (req, res) => {
     })
 });
 
+
+
+app.get("/", (req, res) => {
+    res.sendFile(path.join(__dirname,"/../public/index.html"));
+})
 
 
 
